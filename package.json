@@ -1,0 +1,36 @@
+{
+  "name": "discord-cf-worker",
+  "version": "1.0.0",
+  "description": "Markov-AI-n discord bot",
+  "main": "src/main.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "tunnel": "npx untun tunnel http://localhost:8787",
+    "deploy": "wrangler deploy",
+    "register": "node src/register.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Gordon Ta",
+  "license": "ISC",
+  "devDependencies": {
+    "@antfu/eslint-config": "^3.0.0",
+    "dotenv": "^16.4.5",
+    "eslint": "^9.9.1",
+    "lint-staged": "^15.2.10",
+    "wrangler": "^3.73.0"
+  },
+  "dependencies": {
+    "consola": "^3.2.3",
+    "discord-interactions": "^4.1.0",
+    "itty-router": "^5.0.18",
+    "untun": "^0.1.3"
+  },
+  "lint-staged": {
+    "*": "eslint --fix"
+  }
+}
