@@ -109,7 +109,6 @@ async function verifyDiscordRequest(request, env) {
     const signature = request.headers.get('x-signature-ed25519');
     const timestamp = request.headers.get('x-signature-timestamp');
     const body = await request.text();
-
     const isValid = signature && timestamp && (await verifyKey(body, signature, timestamp, env.DISCORD_PUBLIC_KEY));
     
     if (!isValid) {
@@ -129,9 +128,24 @@ async function callWorkersAI(request, env, model, prompt) {
             { role: 'user', content: prompt },
         ],
     };
-
     const res = await env.AI.run(model, body);
     return Response.json(res);
+}
+
+async function sendChannelMsg(token, channelId, content) {
+    try {
+        await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bot ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ content }),
+        });
+    } catch (err) {
+        console.error(err);
+        throw err;
+    }
 }
 
 export default server;

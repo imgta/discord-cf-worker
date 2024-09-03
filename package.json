@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "tunnel": "npx untun tunnel http://localhost:8787",
+    "tunnel": "npx untun tunnel http://localhost:8787 --port=8787 --protocol=https",
     "deploy": "wrangler deploy",
     "register": "node src/register.js",
     "lint": "eslint .",
