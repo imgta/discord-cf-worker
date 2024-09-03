@@ -51,5 +51,6 @@ export default antfu({
         'style/no-trailing-spaces': 'off',
         'regexp/no-useless-escape': 'off',
         'style/operator-linebreak': 'off',
+        'sort-imports': 'off',
     },
 });

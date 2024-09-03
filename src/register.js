@@ -10,28 +10,31 @@ if (!appId || !token) { throw new Error('Discord credentials invalid or missing.
 
 const commandsArr = Object.values(commands);
 
-const res = await registerCommands(appId, token, commandsArr);
-
-if (res.ok) {
-    consola.success('All commands registered!');
-    const data = await res.json();
-    consola.info(JSON.stringify(data, null, 2));
-}
+await registerCommands(appId, token, commandsArr);
 
 async function registerCommands(appId, token, commands) {
+    consola.start(`Registering ${commands.length} commands...`);
+
     try {
         const res = await fetch(
             `https://discord.com/api/v10/applications/${appId}/commands`,
             {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json',
                     Authorization: `Bot ${token}`,
+                    'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(commands),
             }
         );
-        return res;
+
+        const data = await res.json();
+        if (res.ok) {
+            consola.success('All commands registered!');
+            consola.info(JSON.stringify(data, null, 2));
+        } else {
+            consola.error(`Command registration failed: ${JSON.stringify(data, null, 2)}`);
+        }
     } catch (err) {
         console.error(err);
         throw err;
