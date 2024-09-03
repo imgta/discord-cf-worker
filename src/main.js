@@ -115,7 +115,7 @@ async function verifyDiscordRequest(request, env) {
     if (!isValid) {
         return { isValid };
     } else {
-        return { interaction: body, isValid };
+        return { interaction: JSON.parse(body), isValid };
     }
 }
 
