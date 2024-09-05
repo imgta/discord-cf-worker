@@ -1,7 +1,7 @@
 import { AutoRouter } from 'itty-router';
 import { InteractionResponseType, InteractionType, verifyKey } from 'discord-interactions';
 import { ASK, HELLO, STATUS } from './commands.js';
-import { editInteractMsg, sendChannelMsg, triggerTyping } from './utils/misc.js';
+import { editInteractMsg, triggerTyping } from './utils/misc.js';
 
 class JsonResponse extends Response {
     constructor(body, init) {
