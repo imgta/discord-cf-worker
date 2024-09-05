@@ -48,6 +48,9 @@ router.get('/logs', async (request, env) => {
             <tr>
                 <th>id</th>
                 <th>model</th>
+                <th>user</th>
+                <th>prompt</th>
+                <th>response</th>
                 <th>duration (ms)</th>
                 <th>status code</th>
                 <th>created</th>
@@ -58,6 +61,9 @@ router.get('/logs', async (request, env) => {
             <tr>
                 <td>${log.id}</td>
                 <td>${log.model}</td>
+                <td>${log.metadata.user || ''}</td>
+                <td>${log.metadata.input || ''}</td>
+                <td>${log.response}</td>
                 <td>${log.duration}</td>
                 <td>${log.status_code}</td>
                 <td>${log.created_at}</td>
@@ -176,16 +182,19 @@ async function verifyDiscordRequest(request, env) {
 
 async function callWorkersAI(env, interaction, data) {
     let content = 'Unknown selection.';
-    const [modelName, modelId, prompt] = data.custom_id.split(';');
+    const [modelName, modelId, input] = data.custom_id.split(';');
+    const user = interaction.member.user.global_name;
+    const prompt = `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`;
     const interactUrl = `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${interaction.token}/messages/@original`;
-    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true };
+
+    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { user, input } };
 
     try {
         if (interaction.data.name === 'art') {
             const aiRes = await env.AI.run(
                 modelId,
                 {
-                    prompt: `${prompt}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`,
+                    prompt,
                     num_steps: 20,
                     strength: 1,
                     guidance: 6.5, // default guidance: 7.5
