@@ -59,7 +59,7 @@ router.get('/logs', async (request, env) => {
                 <td>${log.id}</td>
                 <td>${log.model}</td>
                 <td>${log.metadata?.user || ''}</td>
-                <td>${log.metadata?.input || ''}</td>
+                <td>${log.request}</td>
                 <td>${log.response}</td>
                 <td>${log.duration}</td>
                 <td>${log.status_code}</td>
@@ -184,7 +184,7 @@ async function callWorkersAI(env, interaction, data) {
     const prompt = `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`;
     const interactUrl = `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${interaction.token}/messages/@original`;
 
-    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { 'user': user, 'input': input } };
+    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: JSON.stringify({ user, input }) };
 
     try {
         if (interaction.data.name === 'art') {
