@@ -18,17 +18,14 @@ const server = { verifyDiscordRequest, fetch: router.fetch };
 router.get('/', (request, env) => { return new Response(`👋 AppID: ${env.DISCORD_APPLICATION_ID}`); });
 
 router.get('/logs', async (request, env) => {
-    const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways/${env.CLOUDFLARE_WORKERS_GATEWAY_ID}/logs`, {
+    const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways/${env.CLOUDFLARE_WORKERS_GATEWAY_ID}/logs/?direction=desc&per_page=50`, {
         method: 'GET',
         headers: {
             Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
             'Content-Type': 'application/json',
-        }
+        },
     });
     const logs = await cfRes.json();
-
-    // sort logs by most recent to oldest
-    logs.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     // construct basic table to visualize json data
     let tableHtml = `<html>
@@ -61,8 +58,8 @@ router.get('/logs', async (request, env) => {
             <tr>
                 <td>${log.id}</td>
                 <td>${log.model}</td>
-                <td>${log.metadata.user || ''}</td>
-                <td>${log.metadata.input || ''}</td>
+                <td>${log.metadata?.user || ''}</td>
+                <td>${log.metadata?.input || ''}</td>
                 <td>${log.response}</td>
                 <td>${log.duration}</td>
                 <td>${log.status_code}</td>
@@ -187,7 +184,7 @@ async function callWorkersAI(env, interaction, data) {
     const prompt = `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`;
     const interactUrl = `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${interaction.token}/messages/@original`;
 
-    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { user, input } };
+    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { 'user': user, 'input': input } };
 
     try {
         if (interaction.data.name === 'art') {
