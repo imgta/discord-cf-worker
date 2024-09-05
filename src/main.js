@@ -1,6 +1,7 @@
 import { AutoRouter } from 'itty-router';
 import { InteractionResponseType, InteractionType, verifyKey } from 'discord-interactions';
 import { ASK, HELLO, STATUS } from './commands.js';
+import { editInteractMsg, triggerTyping } from './utils/misc.js';
 
 class JsonResponse extends Response {
     constructor(body, init) {
@@ -16,18 +17,18 @@ const server = { verifyDiscordRequest, fetch: router.fetch };
 
 router.get('/', (request, env) => { return new Response(`👋 AppID: ${env.DISCORD_APPLICATION_ID}`); });
 
-router.post('/', async (request, env) => {
+router.post('/', async (request, env, ctx) => {
     const { isValid, interaction } = await server.verifyDiscordRequest(request, env);
     if (!isValid || !interaction) { return new Response('Bad request signature.', { status: 401 }); }
 
-    const { type, data, member } = interaction;
-    const user = member.user.global_name;
+    const { type, data } = interaction;
 
     // `PING` message used during initial webhook handshake--required to configure webhook in dev portal
     if (type === InteractionType.PING) { return new JsonResponse({ type: InteractionResponseType.PONG }); }
     
     // most user slash commands will be `APPLICATION_COMMAND`.
     if (type === InteractionType.APPLICATION_COMMAND) {
+        const user = interaction.member.user.global_name;
         switch (data.name.toLowerCase()) {
             case STATUS.name: {
                 const input = data.options[0].value;
@@ -83,12 +84,11 @@ router.post('/', async (request, env) => {
     // response to button interaction
     if (type === InteractionType.MESSAGE_COMPONENT) {
         let content = 'Unknown selection.';
-        const [modelName, modelId, prompt] = data.custom_id.split(';');
 
-        if (data.custom_id) { content = `${modelName} selected.`; }
+        const [modelName] = data.custom_id.split(';');
+        if (data.custom_id) { content = `Calling ${modelName}...`; }
 
-        const answer = await callWorkersAI(request, env, modelId, prompt);
-        if (answer) { content = JSON.stringify(answer); }
+        ctx.waitUntil(callWorkersAI(env, interaction, data));
 
         return new JsonResponse({
             type: InteractionResponseType.UPDATE_MESSAGE,
@@ -111,14 +111,15 @@ async function verifyDiscordRequest(request, env) {
     const body = await request.text();
     const isValid = signature && timestamp && (await verifyKey(body, signature, timestamp, env.DISCORD_PUBLIC_KEY));
     
-    if (!isValid) {
-        return { isValid };
-    } else {
-        return { interaction: JSON.parse(body), isValid };
-    }
+    if (!isValid) { return { isValid }; }
+
+    return { interaction: JSON.parse(body), isValid };
 }
 
-async function callWorkersAI(request, env, model, prompt) {
+async function callWorkersAI(env, interaction, data) {
+    let content = 'Unknown selection.';
+    const [modelName, modelId, prompt] = data.custom_id.split(';');
+
     const body = {
         messages: [
             {
@@ -128,8 +129,13 @@ async function callWorkersAI(request, env, model, prompt) {
             { role: 'user', content: prompt },
         ],
     };
-    const res = await env.AI.run(model, body);
-    return Response.json(res);
+
+    await triggerTyping(env.DISCORD_TOKEN, interaction.message.channel_id);
+
+    const res = await env.AI.run(modelId, body);
+    if (res?.response) { content = `[${modelName}]: ${res.response}`; };
+
+    await editInteractMsg(env.DISCORD_TOKEN, interaction, content);
 }
 
 async function sendChannelMsg(token, channelId, content) {
