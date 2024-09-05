@@ -84,10 +84,7 @@ router.post('/', async (request, env, ctx) => {
             }
     
             default:
-                return new JsonResponse(
-                    { error: 'Unhandled or unknown command.' },
-                    { status: 400 }
-                );
+                return new JsonResponse({ error: 'Unhandled or unknown command.' }, { status: 400 });
         }
     }
     
@@ -130,10 +127,22 @@ async function callWorkersAI(env, interaction, data) {
     let content = 'Unknown selection.';
     const [modelName, modelId, prompt] = data.custom_id.split(';');
     const interactUrl = `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${interaction.token}/messages/@original`;
+    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true };
 
     try {
         if (interaction.data.name === 'art') {
-            const aiRes = await env.AI.run(modelId, { prompt });
+            const aiRes = await env.AI.run(
+                modelId,
+                {
+                    prompt: `${prompt}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`,
+                    num_steps: 20,
+                    strength: 1,
+                    guidance: 6.5, // default guidance: 7.5
+                    negative_prompt: 'bad anatomy, bad proportions, blurry, cropped, deformed, disfigured, drawing, error, extra fingers, fused fingers, jpeg artifacts, letter, low quality, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality',
+                },
+                { gateway },
+            );
+            
             // consume ReadableStream and create formdata w/ image file
             const stream = new Response(aiRes);
             const imgBuffer = await stream.arrayBuffer();
@@ -151,8 +160,8 @@ async function callWorkersAI(env, interaction, data) {
         } else {
             await triggerTyping(env.DISCORD_TOKEN, interaction.message.channel_id); // lasts 10 seconds
     
-            const aiRes = await env.AI.run(modelId, { prompt });
-            content = `**\`[${modelName}]:\`** ${aiRes.response}`;
+            const aiRes = await env.AI.run(modelId, { prompt }, { gateway });
+            content = `**\`[${modelName}]\`**: ${aiRes.response}`;
     
             await fetch(interactUrl, {
                 method: 'PATCH',
