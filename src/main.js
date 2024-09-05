@@ -17,6 +17,57 @@ const server = { verifyDiscordRequest, fetch: router.fetch };
 
 router.get('/', (request, env) => { return new Response(`👋 AppID: ${env.DISCORD_APPLICATION_ID}`); });
 
+router.get('/logs', async (request, env) => {
+    const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways/${env.CLOUDFLARE_WORKERS_GATEWAY_ID}/logs`, {
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
+            'Content-Type': 'application/json',
+        }
+    });
+    const logs = await cfRes.json();
+
+    // sort logs by most recent to oldest
+    logs.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    // construct basic table to visualize json data
+    let tableHtml = `<html>
+    <head>
+        <style>
+            table { border-collapse: collapse; width: fit-content; font-family: monospace; }
+            th { text-align: center; }
+            td { text-align: left; }
+            th, td { border: 1px solid #ddd; padding: 8px; }
+            tr:nth-child(even) { background-color: #f2f2f2; }
+            th { background-color: #4db8ff; color: white; }
+        </style>
+    </head>
+    <body>
+        <h1>Cloudflare Workers AI Gateway Logs</h1>
+        <table>
+            <tr>
+                <th>id</th>
+                <th>model</th>
+                <th>duration (ms)</th>
+                <th>status code</th>
+                <th>created</th>
+            </tr>`;
+
+    logs.result.forEach(log => {
+        tableHtml += `
+            <tr>
+                <td>${log.id}</td>
+                <td>${log.model}</td>
+                <td>${log.duration}</td>
+                <td>${log.status_code}</td>
+                <td>${log.created_at}</td>
+            </tr>`;
+    });
+    tableHtml += `</table></body></html>`;
+
+    return new Response(tableHtml, { headers: { 'Content-Type': 'text/html' } });
+});
+
 router.post('/', async (request, env, ctx) => {
     const { isValid, interaction } = await server.verifyDiscordRequest(request, env);
     if (!isValid || !interaction) { return new Response('Bad request signature.', { status: 401 }); }
