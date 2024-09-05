@@ -20,3 +20,14 @@ export const ASK = {
         required: true,
     }],
 };
+
+export const ART = {
+    name: 'art',
+    description: 'Text-to-image generations.',
+    options: [{
+        type: 3, 
+        name: 'image', 
+        description: 'Your texts into images.', 
+        required: true,
+    }],
+};

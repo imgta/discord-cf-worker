@@ -1,7 +1,7 @@
 import { AutoRouter } from 'itty-router';
 import { InteractionResponseType, InteractionType, verifyKey } from 'discord-interactions';
-import { ASK, HELLO, STATUS } from './commands.js';
-import { editInteractMsg, triggerTyping } from './utils/misc.js';
+import { ART, ASK, HELLO, STATUS } from './commands.js';
+import { sendChannelMsg, triggerTyping } from './utils/misc.js';
 
 class JsonResponse extends Response {
     constructor(body, init) {
@@ -46,7 +46,7 @@ router.post('/', async (request, env, ctx) => {
             }
     
             case ASK.name: {
-                const prompt = data.options.find(opt => opt.name === 'question').value;
+                const prompt = data.options[0].value;
                 return new JsonResponse({
                     type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
                     data: {
@@ -59,7 +59,7 @@ router.post('/', async (request, env, ctx) => {
                                     type: 2, // button
                                     style: 1,
                                     label: 'Meta Llama 3',
-                                    custom_id: `Meta Llama 3;@cf/meta/llama-3.1-8b-instruct;${prompt}`,
+                                    custom_id: `Meta Llama 3;@cf/meta/llama-3-8b-instruct;${prompt}`,
                                 },
                                 {
                                     type: 2, // button
@@ -71,6 +71,16 @@ router.post('/', async (request, env, ctx) => {
                         }]
                     },
                 });
+            }
+
+            case ART.name: {
+                const text = data.options[0].value;
+                // const aiData = { custom_id: `Stable Diffusion XL Lightning;@cf/bytedance/stable-diffusion-xl-lightning;${text}` };
+                const aiData = { custom_id: `Stable Diffusion XL Base;@cf/stabilityai/stable-diffusion-xl-base-1.0;${text}` };
+
+                ctx.waitUntil(callWorkersAI(env, interaction, aiData));
+
+                return new JsonResponse({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE });
             }
     
             default:
@@ -119,38 +129,43 @@ async function verifyDiscordRequest(request, env) {
 async function callWorkersAI(env, interaction, data) {
     let content = 'Unknown selection.';
     const [modelName, modelId, prompt] = data.custom_id.split(';');
+    const interactUrl = `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${interaction.token}/messages/@original`;
 
-    const body = {
-        messages: [
-            {
-                role: 'system',
-                content: 'You are a friendly and resourceful assistant that loves answering questions',
-            },
-            { role: 'user', content: prompt },
-        ],
-    };
-
-    await triggerTyping(env.DISCORD_TOKEN, interaction.message.channel_id);
-
-    const res = await env.AI.run(modelId, body);
-    if (res?.response) { content = `[${modelName}]: ${res.response}`; };
-
-    await editInteractMsg(env.DISCORD_TOKEN, interaction, content);
-}
-
-async function sendChannelMsg(token, channelId, content) {
     try {
-        await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bot ${token}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ content }),
-        });
-    } catch (err) {
-        console.error(err);
-        throw err;
+        if (interaction.data.name === 'art') {
+            const aiRes = await env.AI.run(modelId, { prompt });
+            // consume ReadableStream and create formdata w/ image file
+            const stream = new Response(aiRes);
+            const imgBuffer = await stream.arrayBuffer();
+    
+            const formData = new FormData();
+            formData.append('content', `Here's your image, ${interaction.member.user.global_name}:`);
+            formData.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'art.png');
+    
+            // update interaction message with image
+            await fetch(interactUrl, {
+                method: 'PATCH',
+                headers: { Authorization: `Bot ${env.DISCORD_TOKEN}` },
+                body: formData,
+            });
+        } else {
+            await triggerTyping(env.DISCORD_TOKEN, interaction.message.channel_id); // lasts 10 seconds
+    
+            const aiRes = await env.AI.run(modelId, { prompt });
+            content = `**\`[${modelName}]:\`** ${aiRes.response}`;
+    
+            await fetch(interactUrl, {
+                method: 'PATCH',
+                headers: {
+                    Authorization: `Bot ${env.DISCORD_TOKEN}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content, components: [] }),
+            });
+        }
+    } catch (error) {
+        console.error(error);
+        await sendChannelMsg(env.token, env.DISCORD_CHANNEL_ID, error);
     }
 }
 
