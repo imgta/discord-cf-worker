@@ -1,7 +1,7 @@
 import { AutoRouter } from 'itty-router';
 import { InteractionResponseType, InteractionType, verifyKey } from 'discord-interactions';
 import { ART, ASK, HELLO, STATUS } from './commands.js';
-import { sendChannelMsg, triggerTyping } from './utils/misc.js';
+import { sendChannelMsg, triggerTyping } from './utils.js';
 
 class JsonResponse extends Response {
     constructor(body, init) {
@@ -45,8 +45,8 @@ router.get('/logs', async (request, env) => {
             <tr>
                 <th>id</th>
                 <th>model</th>
-                <th>user</th>
-                <th>prompt</th>
+                <th>metadata</th>
+                <th>request</th>
                 <th>response</th>
                 <th>duration (ms)</th>
                 <th>status code</th>
@@ -58,7 +58,7 @@ router.get('/logs', async (request, env) => {
             <tr>
                 <td>${log.id}</td>
                 <td>${log.model}</td>
-                <td>${log.metadata?.user || ''}</td>
+                <td>${log.metadata}</td>
                 <td>${log.request}</td>
                 <td>${log.response}</td>
                 <td>${log.duration}</td>
@@ -91,14 +91,14 @@ router.post('/', async (request, env, ctx) => {
                     data: { content: ['beep', 'boop'].includes(input.toLowerCase()) ? 'Beep boop.' : 'All systems go!' },
                 });
             }
-                
+
             case HELLO.name: {
                 return new JsonResponse({
                     type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
                     data: { content: `Hello there, ${user}!` },
                 });
             }
-    
+
             case ASK.name: {
                 const prompt = data.options[0].value;
                 return new JsonResponse({
@@ -149,12 +149,14 @@ router.post('/', async (request, env, ctx) => {
         const [modelName] = data.custom_id.split(';');
         if (data.custom_id) { content = `Calling ${modelName}...`; }
 
-        ctx.waitUntil(callWorkersAI(env, interaction, data));
-
-        return new JsonResponse({
+        const response = new JsonResponse({
             type: InteractionResponseType.UPDATE_MESSAGE,
             data: { content, components: [] }, // set empty components array to remove buttons
         });
+
+        ctx.waitUntil(callWorkersAI(env, interaction, data));
+
+        return response;
     }
     
     console.error(`Unhandled command type: ${type}`);
@@ -179,15 +181,16 @@ async function verifyDiscordRequest(request, env) {
 
 async function callWorkersAI(env, interaction, data) {
     let content = 'Unknown selection.';
+    const { token, member, message } = interaction;
     const [modelName, modelId, input] = data.custom_id.split(';');
-    const user = interaction.member.user.global_name;
-    const prompt = `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`;
-    const interactUrl = `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${interaction.token}/messages/@original`;
 
-    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: JSON.stringify({ user, input }) };
+    const user = member.user.global_name;
+    const discordUrl = 'https://discord.com/api/v10';
+    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { user, input } };
 
     try {
-        if (interaction.data.name === 'art') {
+        if (interaction.data.name === 'art') { // text-to-img calls
+            const prompt = `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`;
             const aiRes = await env.AI.run(
                 modelId,
                 {
@@ -205,33 +208,35 @@ async function callWorkersAI(env, interaction, data) {
             const imgBuffer = await stream.arrayBuffer();
     
             const formData = new FormData();
-            formData.append('content', `Here's your image, ${interaction.member.user.global_name}:`);
+            formData.append('content', `Here's your image, ${user}:`);
             formData.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'art.png');
     
-            // update interaction message with image
-            await fetch(interactUrl, {
+            // update original interaction message with image via webhook
+            await fetch(`${discordUrl}/webhooks/${env.DISCORD_APPLICATION_ID}/${token}/messages/@original`, {
                 method: 'PATCH',
                 headers: { Authorization: `Bot ${env.DISCORD_TOKEN}` },
                 body: formData,
             });
-        } else {
-            await triggerTyping(env.DISCORD_TOKEN, interaction.message.channel_id); // lasts 10 seconds
+        } else { // text generation calls
+            await triggerTyping(env.DISCORD_TOKEN, message.channel_id); // lasts 10 seconds
     
-            const aiRes = await env.AI.run(modelId, { prompt }, { gateway });
-            content = `**\`[${modelName}]\`**: ${aiRes.response}`;
-    
-            await fetch(interactUrl, {
+            const aiRes = await env.AI.run(modelId, { prompt: input }, { gateway });
+            const { response } = await aiRes;
+
+            content = `**\`[${modelName}]\`**: ${response}`;
+
+            await fetch(`${discordUrl}/channels/${message.channel_id}/messages/${message.id}`, {
                 method: 'PATCH',
                 headers: {
                     Authorization: `Bot ${env.DISCORD_TOKEN}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ content, components: [] }),
+                body: JSON.stringify({ content }),
             });
         }
     } catch (error) {
         console.error(error);
-        await sendChannelMsg(env.token, env.DISCORD_CHANNEL_ID, error);
+        await sendChannelMsg(env.DISCORD_TOKEN, env.DISCORD_CHANNEL_ID, error);
     }
 }
 
