@@ -131,17 +131,6 @@ router.all('*', () => new Response('Not Found.', { status: 404 }));
 
 // --------------------------------------------------
 
-async function verifyDiscordRequest(request, env) {
-    const signature = request.headers.get('x-signature-ed25519');
-    const timestamp = request.headers.get('x-signature-timestamp');
-    const body = await request.text();
-    const isValid = signature && timestamp && (await verifyKey(body, signature, timestamp, env.DISCORD_PUBLIC_KEY));
-    
-    if (!isValid) { return { isValid }; }
-
-    return { interaction: JSON.parse(body), isValid };
-}
-
 async function callWorkersAI(env, cmd, interaction, aiParams) {
     let body = 'Interaction failed.';
     const { token, member } = interaction;
@@ -162,9 +151,10 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
                     strength: 1,
                     guidance: 6.5, // default guidance: 7.5
                     negative_prompt: 'bad anatomy, bad proportions, blurry, cropped, deformed, disfigured, drawing, error, extra fingers, fused fingers, jpeg artifacts, letter, low quality, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality',
-                },
+                }, 
                 { gateway },
             );
+
             // consume ReadableStream and create formdata w/ image file
             const stream = new Response(aiRes);
             const imgBuffer = await stream.arrayBuffer();
@@ -177,27 +167,42 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
         if (cmd === 'ask') { // Minstral 7B text generation
             const aiRes = await env.AI.run(modelId, { prompt: input }, { gateway });
             const { response } = await aiRes;
-
-            body = JSON.stringify({ content: `**\`[${modelName}]\`** ${response}` });
+            body = { content: `**\`[${modelName}]\`** ${response}` };
         }
 
         if (cmd === 'tldr') { // BART Large-CNN text summarization
             const aiRes = await env.AI.run(modelId, { input_text: input }, { gateway });
             const { response } = await aiRes;
-
-            body = JSON.stringify({ content: `**\`[${modelName}]\`** ${response}` });
+            body = { content: `**\`[${modelName}]\`** ${response}` };
         }
 
+        const headers = { Authorization: `Bot ${env.DISCORD_TOKEN}` };
+        if (!(body instanceof FormData)) {
+            headers['Content-Type'] = 'application/json';
+            body = JSON.stringify(body);
+        }
+        
         // update original interaction message with image via webhook
         await fetch(`${discordUrl}/webhooks/${env.DISCORD_APPLICATION_ID}/${token}/messages/@original`, {
-            method: 'PATCH',
-            headers: { Authorization: `Bot ${env.DISCORD_TOKEN}` },
+            method: 'PATCH', 
+            headers, 
             body,
         });
     } catch (error) {
         console.error(error);
-        await sendChannelMsg(env.DISCORD_TOKEN, env.DISCORD_CHANNEL_ID, error);
+        await sendChannelMsg(env.DISCORD_TOKEN, env.DISCORD_CHANNEL_ID, error.toString());
     }
+}
+
+async function verifyDiscordRequest(request, env) {
+    const signature = request.headers.get('x-signature-ed25519');
+    const timestamp = request.headers.get('x-signature-timestamp');
+    const body = await request.text();
+    const isValid = signature && timestamp && (await verifyKey(body, signature, timestamp, env.DISCORD_PUBLIC_KEY));
+    
+    if (!isValid) { return { isValid }; }
+
+    return { interaction: JSON.parse(body), isValid };
 }
 
 export default server;
