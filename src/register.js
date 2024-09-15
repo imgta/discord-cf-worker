@@ -1,6 +1,6 @@
 import process from 'node:process';
-import dotenv from 'dotenv';
 import { consola } from 'consola';
+import dotenv from 'dotenv';
 import * as commands from './commands.js';
 
 dotenv.config();
