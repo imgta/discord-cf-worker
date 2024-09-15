@@ -28,29 +28,28 @@ router.get('/logs', async (request, env) => {
     });
     const logs = await cfRes.json();
 
-    // construct basic table to visualize json data
+    // construct basic html table to render gateway logs
     let tableHtml = `<html>
     <head>
         <style>
             table { border-collapse: collapse; width: fit-content; font-family: monospace; }
             th { text-align: center; }
-            td { text-align: left; }
+            td { text-overflow: clip; }
             th, td { border: 1px solid #ddd; padding: 8px; }
             tr:nth-child(even) { background-color: #f2f2f2; }
             th { background-color: #4db8ff; color: white; }
         </style>
     </head>
     <body>
-        <h1>Cloudflare Workers AI Gateway Logs</h1>
+        <h1 style="text-align:center;">Cloudflare Workers AI Gateway Logs</h1>
         <table>
             <tr>
                 <th>id</th>
                 <th>model</th>
-                <th>metadata</th>
-                <th>request</th>
-                <th>response</th>
+                <th>user</th>
+                <th>input</th>
                 <th>duration (ms)</th>
-                <th>status code</th>
+                <th>status</th>
                 <th>created</th>
             </tr>`;
 
@@ -58,12 +57,11 @@ router.get('/logs', async (request, env) => {
         tableHtml += `
             <tr>
                 <td>${log.id}</td>
-                <td>${log.model}</td>
-                <td>${log.metadata}</td>
-                <td>${log.request}</td>
-                <td>${log.response}</td>
-                <td>${log.duration}</td>
-                <td>${log.status_code}</td>
+                <td>${log.metadata.model || log.model}</td>
+                <td>${log.metadata.user}</td>
+                <td style="max-height:10px;">${log.metadata.input}</td>
+                <td style="text-align:center;">${log.duration}</td>
+                <td style="text-align:center;">${log.status_code}</td>
                 <td>${log.created_at}</td>
             </tr>`;
     });
@@ -95,8 +93,10 @@ router.post('/', async (request, env, ctx) => {
             let aiParams = 'No AI parameters found.';
             const prompt = data.options[0].value;
 
-            if (cmd === 'art') { aiParams = `Stable Diffusion XL Base;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`; }
+            if (cmd === 'art') { aiParams = `SDXL-Base 1.0;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`; }
+
             if (cmd === 'ask') { aiParams = `Minstral 7B;@hf/mistral/mistral-7b-instruct-v0.2;${prompt}`; }
+
             if (cmd === 'tldr') { aiParams = `BART Large-CNN;@cf/facebook/bart-large-cnn;${prompt}`; }
 
             ctx.waitUntil(callWorkersAI(env, cmd, interaction, aiParams));
@@ -109,7 +109,6 @@ router.post('/', async (request, env, ctx) => {
     // response to button interaction (3)
     if (type === InteractionType.MESSAGE_COMPONENT) {
         let content = 'Unknown selection.';
-
         const [modelName] = data.custom_id.split(';');
         if (data.custom_id) { content = `Calling ${modelName}...`; }
 
@@ -117,9 +116,7 @@ router.post('/', async (request, env, ctx) => {
             type: InteractionResponseType.UPDATE_MESSAGE,
             data: { content, components: [] }, // set empty components array to remove buttons
         });
-
         ctx.waitUntil(callWorkersAI(env, interaction, data));
-
         return response;
     }
     
@@ -134,23 +131,24 @@ router.all('*', () => new Response('Not Found.', { status: 404 }));
 async function callWorkersAI(env, cmd, interaction, aiParams) {
     let body = 'Interaction failed.';
     const { token, member } = interaction;
-    const [modelName, modelId, input] = aiParams.split(';');
+    const [model, modelId, input] = aiParams.split(';');
 
     const user = member.user.global_name;
     const discordUrl = 'https://discord.com/api/v10';
-    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { user, input } };
+    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { model, user, input } };
 
     try {
         if (cmd === 'art') { // Stable Diffusion XL text-to-img generation
-            const prompt = `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`;
             const aiRes = await env.AI.run(
                 modelId, 
                 {
-                    prompt,
+                    prompt: `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`,
+                    negative_prompt: 'bad anatomy, bad proportions, blurry, cropped, deformed, disfigured, drawing, error, extra fingers, fused fingers, jpeg artifacts, letter, low quality, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality',
+                    height: 1024,
+                    width: 1024,
                     num_steps: 20,
                     strength: 1,
                     guidance: 6.5, // default guidance: 7.5
-                    negative_prompt: 'bad anatomy, bad proportions, blurry, cropped, deformed, disfigured, drawing, error, extra fingers, fused fingers, jpeg artifacts, letter, low quality, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality',
                 }, 
                 { gateway },
             );
@@ -160,20 +158,20 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
             const imgBuffer = await stream.arrayBuffer();
     
             body = new FormData();
-            body.append('content', `**\`[${modelName}]\`** Image for ${user}:`);
+            body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
             body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'art.png');
         }
 
         if (cmd === 'ask') { // Minstral 7B text generation
-            const aiRes = await env.AI.run(modelId, { prompt: input }, { gateway });
+            const aiRes = await env.AI.run(modelId, { prompt: input, raw: true }, { gateway });
             const { response } = await aiRes;
-            body = { content: `**\`[${modelName}]\`** ${response}` };
+            body = { content: `**\`[${model}]:\`** ${response.trim()}` };
         }
 
         if (cmd === 'tldr') { // BART Large-CNN text summarization
             const aiRes = await env.AI.run(modelId, { input_text: input }, { gateway });
-            const { response } = await aiRes;
-            body = { content: `**\`[${modelName}]\`** ${response}` };
+            const { summary } = await aiRes;
+            body = { content: `**\`[${model}]:\`** ${summary}` };
         }
 
         const headers = { Authorization: `Bot ${env.DISCORD_TOKEN}` };
