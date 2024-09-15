@@ -84,7 +84,7 @@ router.post('/', async (request, env, ctx) => {
     // most user slash commands will be `APPLICATION_COMMAND` (2).
     if (type === InteractionType.APPLICATION_COMMAND) {
         const cmd = data.name;
-        const prompt = data.options[0].value;
+        const prompt = data.options[0]?.value;
         const user = interaction.member.user.global_name;
 
         switch (cmd) {
