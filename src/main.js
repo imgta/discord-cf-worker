@@ -81,39 +81,28 @@ router.post('/', async (request, env, ctx) => {
     // `PING` (1) interaction during initial webhook handshake--required to configure webhook in dev portal
     if (type === InteractionType.PING) { return new JsonResponse({ type: InteractionResponseType.PONG }); }
     
-    // most user slash commands will be `APPLICATION_COMMAND` (2).
+    // most user slash commands will be type `APPLICATION_COMMAND` (2) interactions
     if (type === InteractionType.APPLICATION_COMMAND) {
         const cmd = data.name;
-        const prompt = data.options[0]?.value;
-        const user = interaction.member.user.global_name;
 
-        switch (cmd) {
-            case HELLO.name: {
-                return new JsonResponse({
-                    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                    data: { content: `Hello there, ${user}!` },
-                });
-            }
+        if (cmd === 'hello') {
+            const user = interaction.member.user.global_name;
+            return new JsonResponse({
+                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+                data: { content: `Hello there, ${user}!` },
+            });
+        } else if (['art', 'ask', 'tldr'].includes(cmd)) {
+            let aiParams = 'No AI parameters found.';
+            const prompt = data.options[0].value;
 
-            case ASK.name: {
-                const aiData = `Minstral 7B;@hf/mistral/mistral-7b-instruct-v0.2;${prompt}`;
-                ctx.waitUntil(callWorkersAI(env, cmd, interaction, aiData));
-                return new JsonResponse({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE });
-            }
+            if (cmd === 'art') { aiParams = `Stable Diffusion XL Base;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`; }
+            if (cmd === 'ask') { aiParams = `Minstral 7B;@hf/mistral/mistral-7b-instruct-v0.2;${prompt}`; }
+            if (cmd === 'tldr') { aiParams = `BART Large-CNN;@cf/facebook/bart-large-cnn;${prompt}`; }
 
-            case TLDR.name: {
-                const aiData = `BART Large-CNN;@cf/facebook/bart-large-cnn;${prompt}`;
-                ctx.waitUntil(callWorkersAI(env, cmd, interaction, aiData));
-                return new JsonResponse({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE });
-            }
-
-            case ART.name: {
-                const aiData = `Stable Diffusion XL Base;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`;
-                ctx.waitUntil(callWorkersAI(env, cmd, interaction, aiData));
-                return new JsonResponse({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE });
-            }
-    
-            default: return new JsonResponse({ error: 'Unhandled or unknown command.' }, { status: 400 });
+            ctx.waitUntil(callWorkersAI(env, cmd, interaction, aiParams));
+            return new JsonResponse({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE });
+        } else {
+            return new JsonResponse({ error: 'Unhandled or unknown command.' }, { status: 400 });
         }
     }
     
@@ -153,10 +142,10 @@ async function verifyDiscordRequest(request, env) {
     return { interaction: JSON.parse(body), isValid };
 }
 
-async function callWorkersAI(env, cmd, interaction, aiData) {
+async function callWorkersAI(env, cmd, interaction, aiParams) {
     let body = 'Interaction failed.';
     const { token, member } = interaction;
-    const [modelName, modelId, input] = aiData.split(';');
+    const [modelName, modelId, input] = aiParams.split(';');
 
     const user = member.user.global_name;
     const discordUrl = 'https://discord.com/api/v10';
@@ -183,12 +172,16 @@ async function callWorkersAI(env, cmd, interaction, aiData) {
             body = new FormData();
             body.append('content', `**\`[${modelName}]\`** Image for ${user}:`);
             body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'art.png');
-        } else if (cmd === 'ask') { // Minstral 7B text generation
+        }
+
+        if (cmd === 'ask') { // Minstral 7B text generation
             const aiRes = await env.AI.run(modelId, { prompt: input }, { gateway });
             const { response } = await aiRes;
 
             body = JSON.stringify({ content: `**\`[${modelName}]\`** ${response}` });
-        } else if (cmd === 'tldr') { // BART Large-CNN text summarization
+        }
+
+        if (cmd === 'tldr') { // BART Large-CNN text summarization
             const aiRes = await env.AI.run(modelId, { input_text: input }, { gateway });
             const { response } = await aiRes;
 
