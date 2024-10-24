@@ -89,9 +89,11 @@ router.post('/', async (request, env, ctx) => {
                 type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
                 data: { content: `Hello there, ${user}!` },
             });
-        } else if (['art', 'ask', 'tldr'].includes(cmd)) {
+        } else if (['flux', 'art', 'ask', 'tldr'].includes(cmd)) {
             let aiParams = 'No AI parameters found.';
             const prompt = data.options[0].value;
+
+            if (cmd === 'flux') { aiParams = `FLUX.1 [schnell];@cf/black-forest-labs/flux-1-schnell;${prompt}`; }
 
             if (cmd === 'art') { aiParams = `SDXL-Base 1.0;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`; }
 
@@ -138,6 +140,28 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
     const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { model, user, input } };
 
     try {
+        if (cmd === 'flux') {
+            const aiRes = await env.AI.run(
+                modelId,
+                {
+                    prompt: `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`,
+                    height: 1024,
+                    width: 1024,
+                    num_steps: 20,
+                    guidance: 2.5, // default 3
+                    safety_tolerance: 2, // (0-6) most strict to least
+                    // prompt_upsampling: false,
+                },
+                { gateway },
+            );
+
+            const stream = new Response(aiRes);
+            const imgBuffer = await stream.arrayBuffer();
+    
+            body = new FormData();
+            body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
+            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'flux1.png');
+        }
         if (cmd === 'art') { // Stable Diffusion XL text-to-img generation
             const aiRes = await env.AI.run(
                 modelId, 
