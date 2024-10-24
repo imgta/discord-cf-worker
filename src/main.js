@@ -144,11 +144,11 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
                 modelId,
                 {
                     prompt: `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`,
-                    height: 1024,
-                    width: 1024,
-                    num_steps: 20,
-                    guidance: 2.5, // default 3
-                    safety_tolerance: 2, // (0-6) most strict to least
+                    num_steps: 8,
+                    // height: 1024,
+                    // width: 1024,
+                    // guidance: 2.5, // default 3
+                    // safety_tolerance: 2, // (0-6) most strict to least
                     // prompt_upsampling: false,
                 },
                 { gateway },
