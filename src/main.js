@@ -77,7 +77,7 @@ router.post('/', async (request, env, ctx) => {
 
     // `PING` (1) interaction during initial webhook handshake--required to configure webhook in dev portal
     if (type === InteractionType.PING) { return new JsonResponse({ type: InteractionResponseType.PONG }); }
-    
+
     // most user slash commands will be type `APPLICATION_COMMAND` (2) interactions
     if (type === InteractionType.APPLICATION_COMMAND) {
         const cmd = data.name;
@@ -92,7 +92,7 @@ router.post('/', async (request, env, ctx) => {
             let aiParams = 'No AI parameters found.';
             const prompt = data.options[0].value;
 
-            if (cmd === 'flux') { aiParams = `FLUX.1 [schnell];@cf/black-forest-labs/flux-1-schnell;${prompt}`; }
+            if (cmd === 'flux') { aiParams = `FLUX.1-schnell;@cf/black-forest-labs/flux-1-schnell;${prompt}`; }
 
             if (cmd === 'art') { aiParams = `SDXL-Base 1.0;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`; }
 
@@ -106,7 +106,7 @@ router.post('/', async (request, env, ctx) => {
             return new JsonResponse({ error: 'Unhandled or unknown command.' }, { status: 400 });
         }
     }
-    
+
     // response to button interaction (3)
     if (type === InteractionType.MESSAGE_COMPONENT) {
         let content = 'Unknown selection.';
@@ -120,7 +120,7 @@ router.post('/', async (request, env, ctx) => {
         ctx.waitUntil(callWorkersAI(env, interaction, data));
         return response;
     }
-    
+
     console.error(`Unhandled command type: ${type}`);
     return new JsonResponse({ error: `Unhandled command type: ${type}` }, { status: 400 });
 });
@@ -138,48 +138,57 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
     const discordUrl = 'https://discord.com/api/v10';
     const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { model, user, input } };
 
+    const negative_prompt = 'bad anatomy, bad proportions, blurry, cropped, deformed, deformed anatomy, disfigured, drawing, error, extra fingers, extra limbs, fused fingers, grainy, jpeg artifacts, letter, low quality, low contrast, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality';
+
     try {
-        if (cmd === 'flux') {
+        if (cmd === 'flux') { // FLUX.1 (schnell) text-to-img generation
             const aiRes = await env.AI.run(
                 modelId,
                 {
-                    prompt: `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`,
-                    num_steps: 8,
-                    // height: 1024,
-                    // width: 1024,
-                    // guidance: 2.5, // default 3
-                    // safety_tolerance: 2, // (0-6) most strict to least
-                    // prompt_upsampling: false,
+                    prompt: `${input}, cinematic, highly detailed, sharp focus, masterpiece, beautiful, official art.`,
+                    num_steps: 20, // (1-50)
+                    height: 768,
+                    width: 1024,
                 },
                 { gateway },
             );
 
-            const stream = new Response(aiRes);
-            const imgBuffer = await stream.arrayBuffer();
-    
+            // extract and sanitize base64-encoded img string
+            const base64Img = aiRes.image.replace(/\s/g, '');
+
+            // decode base64 img string to binary string
+            const binaryStr = atob(base64Img);
+
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+            }
+
+            const imgBuffer = bytes.buffer; // convert Uint8Array to ArrayBuffer
+
             body = new FormData();
             body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
-            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'flux1.png');
+            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'flux_art.png');
         }
         if (cmd === 'art') { // Stable Diffusion XL text-to-img generation
             const aiRes = await env.AI.run(
-                modelId, 
+                modelId,
                 {
                     prompt: `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`,
-                    negative_prompt: 'bad anatomy, bad proportions, blurry, cropped, deformed, disfigured, drawing, error, extra fingers, fused fingers, jpeg artifacts, letter, low quality, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality',
+                    negative_prompt,
                     height: 1024,
                     width: 1024,
                     num_steps: 20,
                     strength: 1,
-                    guidance: 6.5, // default guidance: 7.5
-                }, 
+                    guidance: 6.5, // default: 7.5
+                },
                 { gateway },
             );
 
             // consume ReadableStream and create formdata w/ image file
             const stream = new Response(aiRes);
             const imgBuffer = await stream.arrayBuffer();
-    
+
             body = new FormData();
             body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
             body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'art.png');
@@ -202,11 +211,11 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
             headers['Content-Type'] = 'application/json';
             body = JSON.stringify(body);
         }
-        
+
         // update original interaction message with image via webhook
         await fetch(`${discordUrl}/webhooks/${env.DISCORD_APPLICATION_ID}/${token}/messages/@original`, {
-            method: 'PATCH', 
-            headers, 
+            method: 'PATCH',
+            headers,
             body,
         });
     } catch (error) {
@@ -220,7 +229,7 @@ async function verifyDiscordRequest(request, env) {
     const timestamp = request.headers.get('x-signature-timestamp');
     const body = await request.text();
     const isValid = signature && timestamp && (await verifyKey(body, signature, timestamp, env.DISCORD_PUBLIC_KEY));
-    
+
     if (!isValid) { return { isValid }; }
 
     return { interaction: JSON.parse(body), isValid };
