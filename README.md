@@ -1,6 +1,6 @@
 # Discord Bot on Cloudflare Worker
 
-## Quick Start
+## Quick Start  
 ### Setup:
 1. Register all slash commands via `npm run register`
 2. Create `.env` populated with the necessary environment variables:
