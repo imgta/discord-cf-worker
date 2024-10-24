@@ -2,7 +2,7 @@ export const HELLO = { name: 'hello', description: 'Markov says hi.' };
 
 export const ASK = {
     name: 'ask',
-    description: 'Ask Markov a question.',
+    description: 'Ask Markov a question',
     options: [{
         type: 3, 
         name: 'question', 
@@ -13,7 +13,7 @@ export const ASK = {
 
 export const ART = {
     name: 'art',
-    description: 'Text-to-image generations.',
+    description: 'Text-to-image generations',
     options: [{
         type: 3, 
         name: 'image', 
@@ -29,6 +29,17 @@ export const TLDR = {
         type: 3, 
         name: 'text', 
         description: `That long, dense Physics chapter on displacement? Don't worry, I'll get straight to the point!`, 
+        required: true,
+    }],
+};
+
+export const FLUX = {
+    name: 'flux',
+    description: 'Text-to-image generations with FLUX.1',
+    options: [{
+        type: 3, 
+        name: 'prompt', 
+        description: 'FLUX.1 [schnell] by Black Forest Labs', 
         required: true,
     }],
 };
