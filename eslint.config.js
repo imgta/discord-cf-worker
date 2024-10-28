@@ -54,5 +54,6 @@ export default antfu({
         'style/operator-linebreak': 'off',
         'antfu/no-top-level-await': 'off',
         'toml/array-bracket-spacing': 'off',
+        'unicorn/prefer-node-protocol': 'off',
     },
 });

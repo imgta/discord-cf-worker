@@ -93,7 +93,7 @@ router.post('/', async (request, env, ctx) => {
             let aiParams = 'No AI parameters found.';
             const prompt = data.options[0].value;
 
-            if (cmd === 'flux') { aiParams = `FLUX.1-schnell;@cf/black-forest-labs/flux-1-schnell;${prompt}`; }
+            if (cmd === 'flux') { aiParams = `FLUX.1 schnell;@cf/black-forest-labs/flux-1-schnell;${prompt}`; }
 
             if (cmd === 'art') { aiParams = `SDXL-Base 1.0;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`; }
 
@@ -135,28 +135,33 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
     const { token, member } = interaction;
     const [model, modelId, input] = aiParams.split(';');
 
+    const headers = { Authorization: `Bot ${env.DISCORD_TOKEN}` };
+
     const user = member.user.global_name;
     const discordUrl = 'https://discord.com/api/v10';
     const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { model, user, input } };
 
     const negative_prompt = 'bad anatomy, bad proportions, blurry, cropped, deformed, deformed anatomy, disfigured, drawing, error, extra fingers, extra limbs, fused fingers, grainy, jpeg artifacts, letter, low quality, low contrast, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality';
-
     try {
         if (cmd === 'flux') { // FLUX.1 (schnell) text-to-img generation
-            const { image } = await env.AI.run(
+            const aiRes = await env.AI.run(
                 modelId,
                 {
                     prompt: `${input}, cinematic, 8k, highly detailed, sharp focus, masterpiece, high quality, perfect lighting`,
-                    num_steps: 20, // (1-50)
                     height: 768,
                     width: 1024,
+                    num_steps: 20, // (1-50)
+                    strength: 1,
+                    guidance: 6.5, // default: 7.5
                 },
                 { gateway },
             );
 
+            const imgBuffer = Buffer.from(aiRes.image, 'base64');
+
             body = new FormData();
             body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
-            body.append('file', new Blob([Buffer.from(image, 'base64')], { type: 'image/png' }), 'flux_art.png');
+            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'flux_art.png');
         }
         if (cmd === 'art') { // Stable Diffusion XL text-to-img generation
             const aiRes = await env.AI.run(
@@ -179,7 +184,7 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
 
             body = new FormData();
             body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
-            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'art.png');
+            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'sd_art.png');
         }
 
         if (cmd === 'ask') { // Minstral 7B text generation
@@ -194,7 +199,6 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
             body = { content: `**\`[${model}]:\`** ${summary}` };
         }
 
-        const headers = { Authorization: `Bot ${env.DISCORD_TOKEN}` };
         if (!(body instanceof FormData)) {
             headers['Content-Type'] = 'application/json';
             body = JSON.stringify(body);
