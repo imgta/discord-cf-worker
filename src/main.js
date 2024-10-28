@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { InteractionResponseType, InteractionType, verifyKey } from 'discord-interactions';
 import { AutoRouter } from 'itty-router';
 import { sendChannelMsg } from './utils.js';
@@ -142,10 +143,10 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
 
     try {
         if (cmd === 'flux') { // FLUX.1 (schnell) text-to-img generation
-            const aiRes = await env.AI.run(
+            const { image } = await env.AI.run(
                 modelId,
                 {
-                    prompt: `${input}, cinematic, highly detailed, sharp focus, masterpiece, beautiful, official art.`,
+                    prompt: `${input}, cinematic, 8k, highly detailed, sharp focus, masterpiece, high quality, perfect lighting`,
                     num_steps: 20, // (1-50)
                     height: 768,
                     width: 1024,
@@ -153,22 +154,9 @@ async function callWorkersAI(env, cmd, interaction, aiParams) {
                 { gateway },
             );
 
-            // extract and sanitize base64-encoded img string
-            const base64Img = aiRes.image.replace(/\s/g, '');
-
-            // decode base64 img string to binary string
-            const binaryStr = atob(base64Img);
-
-            const bytes = new Uint8Array(binaryStr.length);
-            for (let i = 0; i < binaryStr.length; i++) {
-                bytes[i] = binaryStr.charCodeAt(i);
-            }
-
-            const imgBuffer = bytes.buffer; // convert Uint8Array to ArrayBuffer
-
             body = new FormData();
             body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
-            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'flux_art.png');
+            body.append('file', new Blob([Buffer.from(image, 'base64')], { type: 'image/png' }), 'flux_art.png');
         }
         if (cmd === 'art') { // Stable Diffusion XL text-to-img generation
             const aiRes = await env.AI.run(
