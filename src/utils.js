@@ -1,22 +1,28 @@
+const DISCORD_URL = 'https://discord.com/api/v10/channels';
+
+async function discordRequest(token, endpoint, method = 'GET', body = null) {
+    const headers = { Authorization: `Bot ${token}` };
+    if (body) { headers['Content-Type'] = 'application/json'; }
+
+    const options = {
+        method,
+        headers,
+        ...(body && { body: JSON.stringify(body) }),
+    };
+
+    const res = await fetch(`${DISCORD_URL}${endpoint}`, options);
+    if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`Discord API Error: ${res.status} ${res.statusText} - ${error}`);
+    }
+
+    return res;
+}
+
 export async function triggerTyping(token, channelId) {
-    await fetch(`https://discord.com/api/v10/channels/${channelId}/typing`, {
-        method: 'POST',
-        headers: { Authorization: `Bot ${token}` },
-    });
+    return discordRequest(token, `/${channelId}/typing`, 'POST');
 }
 
 export async function sendChannelMsg(token, channelId, content) {
-    try {
-        await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bot ${token}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ content }),
-        });
-    } catch (err) {
-        console.error(err);
-        throw err;
-    }
+    return discordRequest(token, `/${channelId}/messages`, 'POST', { content });
 }

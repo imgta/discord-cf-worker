@@ -1,13 +1,13 @@
 {
   "name": "discord-cf-worker",
   "version": "1.0.0",
-  "description": "Markov-AI-n discord bot",
+  "description": "Discord bot deployed with Cloudflare Workers",
   "main": "src/main.js",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "tunnel": "npx untun tunnel http://localhost:8787 --port=8787 --protocol=http",
+    "tun": "npx untun tunnel http://localhost:8787 --port=8787 --protocol=http",
     "deploy": "wrangler deploy",
     "register": "node src/register.js",
     "lint": "eslint .",
@@ -16,7 +16,7 @@
   },
   "keywords": [],
   "author": "Gordon Ta",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "@antfu/eslint-config": "^3.8.0",
     "dotenv": "^16.4.5",
