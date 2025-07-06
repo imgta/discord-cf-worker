@@ -1,4 +1,4 @@
-name = "markov-ai-n"
+name = "discord"
 main = "src/main.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
