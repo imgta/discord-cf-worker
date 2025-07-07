@@ -55,3 +55,7 @@ pnpm run tun
 ```
 3. Set the tunnel URL as your [Discord app's](https://discord.com/developers/applications) `INTERACTIONS ENDPOINT URL` and save
 4. Try using the `/hello` command in your channel
+
+### Support
+Feel free to ask me questions about this repository.  
+If you found this to be helpful, I would appreciate [your support](https://coff.ee/imgta) 🤗
