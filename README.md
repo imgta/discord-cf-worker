@@ -41,7 +41,7 @@ DISCORD_GUILD_ID=...
 DISCORD_CHANNEL_ID=...
 ```
 3. Create a new Cloudflare Worker and pass these environment variables in the `Variables and Secrets` section of your worker dashboard
-4. After pushing changes to main and successful deployment via GitHub Actions, set your Cloudlfare Worker URL, e.g. `<worker-name>.<subdomain>.workers.dev`, as your [Discord app's](https://discord.com/developers/applications) `INTERACTIONS ENDPOINT URL` and save
+4. After pushing changes and successful deployment via GitHub Actions, set your Cloudlfare Worker URL, e.g. `<worker-name>.<subdomain>.workers.dev`, as your [Discord app's](https://discord.com/developers/applications) `INTERACTIONS ENDPOINT URL` and save
 5. Try using the `/hello` command in your channel
 
 ## Local Testing
