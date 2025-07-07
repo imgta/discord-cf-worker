@@ -20,13 +20,14 @@ BOT PERMISSIONS > TEXT PERMISSIONS
 7. Find your guild and channel ids by right-clicking a discord channel and copying the link, e.g. `https://discord.com/channels/<DISCORD_GUILD_ID>/<DISCORD_CHANNEL_ID>`
 
 ## Quick Start  
-1. Clone repository and install dependencies
+1. Clone repository, install `pnpm`, install dependencies
 ```
+npm install -g pnpm
 pnpm install
 ```
 2. Register all slash commands
 ```
-npm run register
+pnpm run register
 ```
 3. Create a `.dev.vars` populated with the necessary environment variables:
 ```env
