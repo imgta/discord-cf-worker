@@ -75,64 +75,6 @@ router.post('/', async (request, env, ctx) => {
     return new JsonResponse({ error: `Unhandled command type: ${type}` }, { status: 400 });
 });
 
-// cloudflare AI gateway logs
-router.get('/logs', async (request, env) => {
-    const gatewayUrl = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways/${env.CLOUDFLARE_WORKERS_GATEWAY_ID}/logs/?direction=desc&per_page=50`;
-
-    const res = await fetch(gatewayUrl, {
-        headers: {
-            Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
-            'Content-Type': 'application/json',
-        },
-    });
-    const logs = await res.json();
-
-    // construct basic html table to render gateway logs
-    const rows = logs.result.map(log => `
-        <tr>
-            <td>${log.id}</td>
-            <td>${log.metadata.model || log.model}</td>
-            <td>${log.metadata.user}</td>
-            <td style="max-height:10px;">${log.metadata.input}</td>
-            <td style="text-align:center;">${log.duration}</td>
-            <td style="text-align:center;">${log.status_code}</td>
-            <td>${log.created_at}</td>
-        </tr>
-    `).join('');
-
-    const html = `
-        <html>
-            <head>
-                <style>
-                    table { border-collapse: collapse; width: fit-content; font-family: monospace; }
-                    th { text-align: center; }
-                    td { text-overflow: clip; }
-                    th, td { border: 1px solid #ddd; padding: 8px; }
-                    tr:nth-child(even) { background-color: #f2f2f2; }
-                    th { background-color: #4db8ff; color: white; }
-                </style>
-            </head>
-            <body>
-                <h1 style="text-align:center;">Cloudflare Workers AI Gateway Logs</h1>
-                <table>
-                    <tr>
-                        <th>id</th>
-                        <th>model</th>
-                        <th>user</th>
-                        <th>input</th>
-                        <th>duration (ms)</th>
-                        <th>status</th>
-                        <th>created</th>
-                    </tr>
-                    ${rows}
-                </table>
-            </body>
-        </html>
-    `;
-
-    return new Response(html, { headers: { 'Content-Type': 'text/html' } });
-});
-
 router.all('*', () => new Response('Not Found.', { status: 404 }));
 
 // --------------------------------------------------
