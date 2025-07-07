@@ -47,11 +47,11 @@ DISCORD_CHANNEL_ID=...
 ## Local Testing
 1. Start wrangler
 ```
-npm run dev
+pnpm run dev
 ```
 2. Tunnel localhost to live, accessible URL endpoint
 ```
-npm run tun
+pnpm run tun
 ```
 3. Set the tunnel URL as your [Discord app's](https://discord.com/developers/applications) `INTERACTIONS ENDPOINT URL` and save
 4. Try using the `/hello` command in your channel
