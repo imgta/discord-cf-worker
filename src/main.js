@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { InteractionResponseType, InteractionType, verifyKey } from 'discord-interactions';
 import { AutoRouter } from 'itty-router';
-import { sendChannelMsg } from './utils.js';
+import { discordRequest, sendChannelMsg } from './utils.js';
 
 class JsonResponse extends Response {
     constructor(body, init) {
@@ -17,58 +17,6 @@ const server = { verifyDiscordRequest, fetch: router.fetch };
 // --------------------------------------------------
 
 router.get('/', (request, env) => { return new Response(`👋 AppID: ${env.DISCORD_APPLICATION_ID}`); });
-
-router.get('/logs', async (request, env) => {
-    const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways/${env.CLOUDFLARE_WORKERS_GATEWAY_ID}/logs/?direction=desc&per_page=50`, {
-        method: 'GET',
-        headers: {
-            Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
-            'Content-Type': 'application/json',
-        },
-    });
-    const logs = await cfRes.json();
-
-    // construct basic html table to render gateway logs
-    let tableHtml = `<html>
-    <head>
-        <style>
-            table { border-collapse: collapse; width: fit-content; font-family: monospace; }
-            th { text-align: center; }
-            td { text-overflow: clip; }
-            th, td { border: 1px solid #ddd; padding: 8px; }
-            tr:nth-child(even) { background-color: #f2f2f2; }
-            th { background-color: #4db8ff; color: white; }
-        </style>
-    </head>
-    <body>
-        <h1 style="text-align:center;">Cloudflare Workers AI Gateway Logs</h1>
-        <table>
-            <tr>
-                <th>id</th>
-                <th>model</th>
-                <th>user</th>
-                <th>input</th>
-                <th>duration (ms)</th>
-                <th>status</th>
-                <th>created</th>
-            </tr>`;
-
-    logs.result.forEach(log => {
-        tableHtml += `
-            <tr>
-                <td>${log.id}</td>
-                <td>${log.metadata.model || log.model}</td>
-                <td>${log.metadata.user}</td>
-                <td style="max-height:10px;">${log.metadata.input}</td>
-                <td style="text-align:center;">${log.duration}</td>
-                <td style="text-align:center;">${log.status_code}</td>
-                <td>${log.created_at}</td>
-            </tr>`;
-    });
-    tableHtml += `</table></body></html>`;
-
-    return new Response(tableHtml, { headers: { 'Content-Type': 'text/html' } });
-});
 
 router.post('/', async (request, env, ctx) => {
     const { isValid, interaction } = await server.verifyDiscordRequest(request, env);
@@ -89,127 +37,207 @@ router.post('/', async (request, env, ctx) => {
                 type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
                 data: { content: `Hello there, ${user}!` },
             });
-        } else if (['flux', 'art', 'ask', 'tldr'].includes(cmd)) {
-            let aiParams = 'No AI parameters found.';
-            const prompt = data.options[0].value;
-
-            if (cmd === 'flux') { aiParams = `FLUX.1 schnell;@cf/black-forest-labs/flux-1-schnell;${prompt}`; }
-
-            if (cmd === 'art') { aiParams = `SDXL-Base 1.0;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`; }
-
-            if (cmd === 'ask') { aiParams = `Minstral 7B;@hf/mistral/mistral-7b-instruct-v0.2;${prompt}`; }
-
-            if (cmd === 'tldr') { aiParams = `BART Large-CNN;@cf/facebook/bart-large-cnn;${prompt}`; }
-
-            ctx.waitUntil(callWorkersAI(env, cmd, interaction, aiParams));
-            return new JsonResponse({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE });
-        } else {
-            return new JsonResponse({ error: 'Unhandled or unknown command.' }, { status: 400 });
         }
+
+        const prompt = data.options[0].value;
+        const aiMap = {
+            flux: `FLUX.1 schnell;@cf/black-forest-labs/flux-1-schnell;${prompt}`,
+            art: `SDXL-Base 1.0;@cf/stabilityai/stable-diffusion-xl-base-1.0;${prompt}`,
+            ask: `Minstral 7B;@hf/mistral/mistral-7b-instruct-v0.2;${prompt}`,
+            tldr: `BART Large-CNN;@cf/facebook/bart-large-cnn;${prompt}`,
+        };
+
+        if (cmd in aiMap) {
+            ctx.waitUntil(callWorkersAI(env, cmd, interaction, aiMap[cmd]));
+            return new JsonResponse({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE });
+        }
+
+        return new JsonResponse({ error: 'Unhandled or unknown command.' }, { status: 400 });
     }
 
     // response to button interaction (3)
     if (type === InteractionType.MESSAGE_COMPONENT) {
-        let content = 'Unknown selection.';
         const [modelName] = data.custom_id.split(';');
-        if (data.custom_id) { content = `Calling ${modelName}...`; }
+        const content = modelName ? `Calling ${modelName}...` : 'Unknown selection.';
 
-        const response = new JsonResponse({
-            type: InteractionResponseType.UPDATE_MESSAGE,
-            data: { content, components: [] }, // set empty components array to remove buttons
-        });
         ctx.waitUntil(callWorkersAI(env, interaction, data));
-        return response;
+
+        return new JsonResponse({
+            type: InteractionResponseType.UPDATE_MESSAGE,
+            data: {
+                content,
+                components: [], // remove buttons
+            },
+        });
     }
 
     console.error(`Unhandled command type: ${type}`);
     return new JsonResponse({ error: `Unhandled command type: ${type}` }, { status: 400 });
 });
 
+// cloudflare AI gateway logs
+router.get('/logs', async (request, env) => {
+    const gatewayUrl = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways/${env.CLOUDFLARE_WORKERS_GATEWAY_ID}/logs/?direction=desc&per_page=50`;
+
+    const res = await fetch(gatewayUrl, {
+        headers: {
+            Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    const logs = await res.json();
+
+    // construct basic html table to render gateway logs
+    const rows = logs.result.map(log => `
+        <tr>
+            <td>${log.id}</td>
+            <td>${log.metadata.model || log.model}</td>
+            <td>${log.metadata.user}</td>
+            <td style="max-height:10px;">${log.metadata.input}</td>
+            <td style="text-align:center;">${log.duration}</td>
+            <td style="text-align:center;">${log.status_code}</td>
+            <td>${log.created_at}</td>
+        </tr>
+    `).join('');
+
+    const html = `
+        <html>
+            <head>
+                <style>
+                    table { border-collapse: collapse; width: fit-content; font-family: monospace; }
+                    th { text-align: center; }
+                    td { text-overflow: clip; }
+                    th, td { border: 1px solid #ddd; padding: 8px; }
+                    tr:nth-child(even) { background-color: #f2f2f2; }
+                    th { background-color: #4db8ff; color: white; }
+                </style>
+            </head>
+            <body>
+                <h1 style="text-align:center;">Cloudflare Workers AI Gateway Logs</h1>
+                <table>
+                    <tr>
+                        <th>id</th>
+                        <th>model</th>
+                        <th>user</th>
+                        <th>input</th>
+                        <th>duration (ms)</th>
+                        <th>status</th>
+                        <th>created</th>
+                    </tr>
+                    ${rows}
+                </table>
+            </body>
+        </html>
+    `;
+
+    return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+});
+
 router.all('*', () => new Response('Not Found.', { status: 404 }));
 
 // --------------------------------------------------
 
+const FLUX_PROMPT_TAIL = 'cinematic, 8k, highly detailed, sharp focus, masterpiece, high quality, perfect lighting';
+const SDXL_PROMPT_TAIL = '(ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)';
+const NEGATIVE_PROMPT = 'bad anatomy, bad proportions, blurry, cropped, deformed, deformed anatomy, disfigured, drawing, error, extra fingers, extra limbs, fused fingers, grainy, jpeg artifacts, letter, low quality, low contrast, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality';
+
+/**
+ * Runs prompt through AI model via Cloudflare Workers AI, then sends PATCH request to edit original interaction message.
+ */
 async function callWorkersAI(env, cmd, interaction, aiParams) {
-    let body = 'Interaction failed.';
     const { token, member } = interaction;
     const [model, modelId, input] = aiParams.split(';');
-
-    const headers = { Authorization: `Bot ${env.DISCORD_TOKEN}` };
-
+    const modelTag = `**\`[${model}]:\`**`;
     const user = member.user.global_name;
-    const discordUrl = 'https://discord.com/api/v10';
-    const gateway = { id: env.CLOUDFLARE_WORKERS_GATEWAY_ID, skipCache: true, metadata: { model, user, input } };
 
-    const negative_prompt = 'bad anatomy, bad proportions, blurry, cropped, deformed, deformed anatomy, disfigured, drawing, error, extra fingers, extra limbs, fused fingers, grainy, jpeg artifacts, letter, low quality, low contrast, lowres, malformed limbs, mutated hands, mutation, normal quality, out of frame, poorly drawn face, poorly drawn hands, signature, sketch, text, ugly, watermark, worst quality';
+    // cloudflare ai gateway metadata
+    const gateway = {
+        id: env.CLOUDFLARE_WORKERS_GATEWAY_ID,
+        skipCache: true,
+        metadata: { model, user, input },
+    };
+
+    let body = 'Interaction failed.';
+
     try {
-        if (cmd === 'flux') { // FLUX.1 (schnell) text-to-img generation
-            const aiRes = await env.AI.run(
-                modelId,
-                {
-                    prompt: `${input}, cinematic, 8k, highly detailed, sharp focus, masterpiece, high quality, perfect lighting`,
+        switch (cmd) {
+            // FLUX.1 (schnell) text-to-img
+            case 'flux': {
+                const aiRes = await env.AI.run(modelId, {
+                    prompt: `${input}, ${FLUX_PROMPT_TAIL}`,
                     height: 768,
                     width: 1024,
-                    num_steps: 20, // (1-50)
+                    steps: 8, // (4-8, old: 1-50)
                     strength: 1,
                     guidance: 6.5, // default: 7.5
-                },
-                { gateway },
-            );
+                }, { gateway });
 
-            const imgBuffer = Buffer.from(aiRes.image, 'base64');
+                const imgBuf = Buffer.from(aiRes.image, 'base64');
+                body = new FormData();
+                body.append('content', `${modelTag} Here's your image, ${user}:`);
+                body.append('file', new Blob([imgBuf], { type: 'image/png' }), 'flux_art.png');
+                break;
+            }
 
-            body = new FormData();
-            body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
-            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'flux_art.png');
-        }
-        if (cmd === 'art') { // Stable Diffusion XL text-to-img generation
-            const aiRes = await env.AI.run(
-                modelId,
-                {
-                    prompt: `${input}, (ultra-detailed), cinematic light, (masterpiece, top quality, best quality, official art, beautiful)`,
-                    negative_prompt,
+            // SDXL text-to-img
+            case 'art': {
+                const aiRes = await env.AI.run(modelId, {
+                    prompt: `${input}, ${SDXL_PROMPT_TAIL}`,
+                    negative_prompt: NEGATIVE_PROMPT,
                     height: 1024,
                     width: 1024,
                     num_steps: 20,
                     strength: 1,
-                    guidance: 6.5, // default: 7.5
-                },
-                { gateway },
-            );
+                    guidance: 6.5,
+                }, { gateway });
 
-            // consume ReadableStream and create formdata w/ image file
-            const stream = new Response(aiRes);
-            const imgBuffer = await stream.arrayBuffer();
+                // consume ReadableStream, create formdata with image file
+                const imgBuf = await new Response(aiRes).arrayBuffer();
+                body = new FormData();
+                body.append('content', `${modelTag} Here's your image, ${user}:`);
+                body.append('file', new Blob([imgBuf], { type: 'image/png' }), 'sdxl_art.png');
+                break;
+            }
 
-            body = new FormData();
-            body.append('content', `**\`[${model}]:\`** Here's your image, ${user}:`);
-            body.append('file', new Blob([imgBuffer], { type: 'image/png' }), 'sd_art.png');
+            // Minstral 7B text-gen
+            case 'ask': {
+                const { response } = await env.AI.run(
+                    modelId,
+                    { prompt: input, raw: true },
+                    { gateway }
+                );
+                body = { content: `${modelTag} ${response.trim()}` };
+                break;
+            }
+
+            // BART Large-CNN summarization
+            case 'tldr': {
+                const { summary } = await env.AI.run(
+                    modelId,
+                    { input_text: input },
+                    { gateway },
+                );
+                body = { content: `${modelTag} ${summary}` };
+                break;
+            }
+
+            default:
+                throw new Error(`Unhandled cmd "${cmd}" in callWorkersAI`);
         }
 
-        if (cmd === 'ask') { // Minstral 7B text generation
-            const aiRes = await env.AI.run(modelId, { prompt: input, raw: true }, { gateway });
-            const { response } = await aiRes;
-            body = { content: `**\`[${model}]:\`** ${response.trim()}` };
-        }
-
-        if (cmd === 'tldr') { // BART Large-CNN text summarization
-            const aiRes = await env.AI.run(modelId, { input_text: input }, { gateway });
-            const { summary } = await aiRes;
-            body = { content: `**\`[${model}]:\`** ${summary}` };
-        }
-
+        const headers = { Authorization: `Bot ${env.DISCORD_TOKEN}` };
         if (!(body instanceof FormData)) {
             headers['Content-Type'] = 'application/json';
             body = JSON.stringify(body);
         }
 
         // update original interaction message with image via webhook
-        await fetch(`${discordUrl}/webhooks/${env.DISCORD_APPLICATION_ID}/${token}/messages/@original`, {
-            method: 'PATCH',
-            headers,
+        await discordRequest(
+            env.DISCORD_TOKEN,
+            'PATCH',
+            `/webhooks/${env.DISCORD_APPLICATION_ID}/${token}/messages/@original`,
             body,
-        });
+        );
     } catch (error) {
         console.error(error);
         await sendChannelMsg(env.DISCORD_TOKEN, env.DISCORD_CHANNEL_ID, error.toString());

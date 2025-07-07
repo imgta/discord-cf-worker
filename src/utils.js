@@ -1,16 +1,18 @@
-const DISCORD_URL = 'https://discord.com/api/v10/channels';
+/**
+ * Makes Discord API request using the given token, handling both JSON and FormData paylods.
+ */
+export async function discordRequest(token, method = 'GET', endpoint, body = null) {
+    const isForm = body instanceof FormData;
 
-async function discordRequest(token, endpoint, method = 'GET', body = null) {
     const headers = { Authorization: `Bot ${token}` };
-    if (body) { headers['Content-Type'] = 'application/json'; }
+    if (!isForm && body) { headers['Content-Type'] = 'application/json'; }
 
-    const options = {
+    const res = await fetch(`https://discord.com/api/v10${endpoint}`, {
         method,
         headers,
-        ...(body && { body: JSON.stringify(body) }),
-    };
+        body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
+    });
 
-    const res = await fetch(`${DISCORD_URL}${endpoint}`, options);
     if (!res.ok) {
         const error = await res.text();
         throw new Error(`Discord API Error: ${res.status} ${res.statusText} - ${error}`);
@@ -20,9 +22,9 @@ async function discordRequest(token, endpoint, method = 'GET', body = null) {
 }
 
 export async function triggerTyping(token, channelId) {
-    return discordRequest(token, `/${channelId}/typing`, 'POST');
+    return discordRequest(token, 'POST', `/channels/${channelId}/typing`);
 }
 
 export async function sendChannelMsg(token, channelId, content) {
-    return discordRequest(token, `/${channelId}/messages`, 'POST', { content });
+    return discordRequest(token, 'POST', `/channels/${channelId}/messages`, { content });
 }
