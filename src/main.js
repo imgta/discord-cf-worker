@@ -16,7 +16,7 @@ const server = { verifyDiscordRequest, fetch: router.fetch };
 
 // --------------------------------------------------
 
-router.get('/', (request, env) => { return new Response(`👋 AppID: ${env.DISCORD_APPLICATION_ID}`); });
+router.get('/', (request, env) => { return new Response('✔ Worker online.'); });
 
 router.post('/', async (request, env, ctx) => {
     const { isValid, interaction } = await server.verifyDiscordRequest(request, env);
